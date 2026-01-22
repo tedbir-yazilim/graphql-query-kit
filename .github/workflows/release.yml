@@ -20,6 +20,5 @@ jobs:
           registry-url: https://registry.npmjs.org/
 
       - run: yarn install --frozen-lockfile
-      - run: yarn --cwd packages/graphql-query-kit build
+      - run: yarn build
       - run: npm publish --access public
-        working-directory: packages/graphql-query-kit
