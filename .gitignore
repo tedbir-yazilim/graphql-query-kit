@@ -49,3 +49,6 @@ data/
 .temp
 temp/
 tmp/
+
+# Secrets
+npm_recovery_codes.txt
