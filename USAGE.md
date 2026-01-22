@@ -73,6 +73,30 @@ return applyQuery(
     maxLimit: 200,
     searchFields: ['name', 'email'],
     searchMode: 'contains',
+    select: ['name', 'email', 'createdAt'],
+  },
+);
+```
+
+To return `pageInfo` with cursors:
+
+```ts
+import { applyQueryWithPageInfo } from '@tedbir/graphql-query-kit';
+
+const { items, pageInfo } = await applyQueryWithPageInfo(
+  this.accountModel,
+  { isDeleted: false },
+  accountFieldMap,
+  filter,
+  sort,
+  pagination,
+  search,
+  {
+    cursorField: 'createdAt',
+    defaultSort: { createdAt: -1 },
+    maxLimit: 200,
+    searchFields: ['name', 'email'],
+    searchMode: 'contains',
   },
 );
 ```
@@ -159,7 +183,7 @@ Example variables:
   },
   "sort": { "field": "createdAt", "direction": "desc" },
   "pagination": { "cursor": "2025-01-01T00:00:00.000Z", "limit": 20, "direction": "next" },
-  "search": { "query": "ali" }
+  "search": { "query": "ali", "fields": ["name", "email"] }
 }
 ```
 
@@ -169,6 +193,7 @@ Example variables:
 - `between` supports `values: ["min", "max"]` or `value: "min,max"`.
 - Cursor pagination requires the sort field to match `cursorField`.
 - If `pagination.limit` is missing, it defaults to 100 and is capped by `maxLimit`.
+- `search.fields` overrides the server-side `searchFields` whitelist.
 
 ## 8) Service layer example (NestJS)
 

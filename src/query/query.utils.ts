@@ -15,6 +15,12 @@ type FieldType = 'string' | 'number' | 'boolean' | 'objectId' | 'date';
 type FieldSpec = { path?: string; type: FieldType };
 type FieldMapLookup = Record<string, FieldSpec>;
 export type SearchMode = 'contains' | 'startsWith' | 'endsWith';
+export type PageInfo = {
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+  nextCursor?: string;
+  prevCursor?: string;
+};
 
 export type FieldMap<T = any> = Partial<Record<keyof T & string, FieldSpec>>;
 
@@ -63,6 +69,7 @@ export function applyQuery<T>(
     cursorField?: string;
     searchFields?: string[];
     searchMode?: SearchMode;
+    select?: string[] | string;
   },
 ): Query<T[], T> {
   const filterConditions = buildFilterConditions(filter, fieldMap);
@@ -103,7 +110,11 @@ export function applyQuery<T>(
     finalFilter = { $and: [queryFilter, cursorCondition] } as QueryFilter<T>;
   }
 
-  return model.find(finalFilter).sort(sortClause).limit(limit);
+  const query = model.find(finalFilter).sort(sortClause).limit(limit);
+  if (options?.select) {
+    query.select(options.select);
+  }
+  return query;
 }
 
 function buildCondition(item: FieldFilterInput, fieldMap: FieldMap) {
@@ -231,7 +242,7 @@ function buildSearchCondition(
   if (!search?.query) {
     return undefined;
   }
-  const searchFields = options?.searchFields;
+  const searchFields = search.fields?.length ? search.fields : options?.searchFields;
   if (!searchFields?.length) {
     throw new BadRequestException('Search fields are required');
   }
@@ -263,4 +274,63 @@ function getCursorOperator(
     return sortDirection === 1 ? '$lt' : '$gt';
   }
   return sortDirection === 1 ? '$gt' : '$lt';
+}
+
+export async function applyQueryWithPageInfo<T>(
+  model: Model<T>,
+  baseFilter: QueryFilter<T>,
+  fieldMap: FieldMap<T>,
+  filter?: FilterInput,
+  sort?: SortInput,
+  pagination?: CursorPaginationInput,
+  search?: SearchInput,
+  options?: {
+    defaultSort?: Record<string, SortOrder>;
+    maxLimit?: number;
+    cursorField?: string;
+    searchFields?: string[];
+    searchMode?: SearchMode;
+    select?: string[] | string;
+  },
+): Promise<{ items: T[]; pageInfo: PageInfo }> {
+  const limit = Math.min(pagination?.limit ?? 100, options?.maxLimit ?? 200);
+  const paginationWithExtra: CursorPaginationInput = {
+    ...pagination,
+    limit: limit + 1,
+  };
+
+  const cursorField = options?.cursorField || 'createdAt';
+  const cursorFieldDef = (fieldMap as FieldMapLookup)[cursorField];
+  if (!cursorFieldDef) {
+    throw new BadRequestException(`Unsupported cursor field: ${cursorField}`);
+  }
+  const cursorPath = cursorFieldDef.path || cursorField;
+
+  const results = await applyQuery(
+    model,
+    baseFilter,
+    fieldMap,
+    filter,
+    sort,
+    paginationWithExtra,
+    search,
+    options,
+  ).exec();
+
+  const hasMore = results.length > limit;
+  const items = hasMore ? results.slice(0, limit) : results;
+  const direction = pagination?.direction || 'next';
+
+  const pageInfo: PageInfo = {
+    hasNextPage: direction === 'next' ? hasMore : Boolean(pagination?.cursor),
+    hasPrevPage: direction === 'prev' ? hasMore : Boolean(pagination?.cursor),
+    nextCursor: items.length ? String(getValueByPath(items[items.length - 1], cursorPath)) : undefined,
+    prevCursor: items.length ? String(getValueByPath(items[0], cursorPath)) : undefined,
+  };
+
+  return { items, pageInfo };
+}
+
+function getValueByPath(item: any, path: string) {
+  return path.split('.').reduce((acc, key) => (acc ? acc[key] : undefined), item);
 }

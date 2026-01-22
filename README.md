@@ -28,6 +28,7 @@ const fieldMap = {
 return applyQuery(model, {}, fieldMap, filter, sort, pagination, search, {
   cursorField: 'createdAt',
   searchFields: ['name'],
+  select: ['name', 'createdAt'],
 });
 ```
 
@@ -48,6 +49,7 @@ import {
   SearchInput,
   SortInput,
   applyQuery,
+  applyQueryWithPageInfo,
   FilterOperator,
   FilterLogic,
   SortDirection,

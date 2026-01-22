@@ -71,4 +71,8 @@ export class SearchInput {
   @Field()
   @IsString()
   query: string;
+
+  @Field(() => [String], { nullable: true })
+  @IsOptional()
+  fields?: string[];
 }
