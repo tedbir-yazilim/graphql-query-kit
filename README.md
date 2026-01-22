@@ -31,6 +31,8 @@ return applyQuery(model, {}, fieldMap, filter, sort, pagination, search, {
 });
 ```
 
+Full guide: `USAGE.md`
+
 ## Build (package)
 
 ```bash
@@ -51,6 +53,8 @@ import {
   SortDirection,
 } from '@tedbir/graphql-query-kit';
 ```
+
+Full guide: `USAGE.md`
 
 ## Notes
 

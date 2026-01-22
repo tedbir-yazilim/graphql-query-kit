@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { Types } from 'mongoose';
+import { Model, Query, QueryFilter, SortOrder, Types } from 'mongoose';
 import {
   CursorPaginationInput,
   FilterInput,
@@ -12,15 +12,11 @@ import { FilterOperator } from '@/enums/filter-operator.enum';
 import { SortDirection } from '@/enums/sort-direction.enum';
 
 type FieldType = 'string' | 'number' | 'boolean' | 'objectId' | 'date';
+type FieldSpec = { path?: string; type: FieldType };
+type FieldMapLookup = Record<string, FieldSpec>;
 export type SearchMode = 'contains' | 'startsWith' | 'endsWith';
 
-export type FieldMap = Record<
-  string,
-  {
-    path?: string;
-    type: FieldType;
-  }
->;
+export type FieldMap<T = any> = Partial<Record<keyof T & string, FieldSpec>>;
 
 export function buildFilterConditions(
   filter: FilterInput | undefined,
@@ -30,16 +26,17 @@ export function buildFilterConditions(
     return [];
   }
 
-  const conditions = filter.items.map((item) =>
-    buildCondition(item, fieldMap),
-  );
+  const conditions = filter.items.map((item) => buildCondition(item, fieldMap));
   if ((filter.logic || FilterLogic.AND) === FilterLogic.OR) {
     return [{ $or: conditions }];
   }
   return conditions;
 }
 
-export function buildSort(sort: SortInput | undefined, fieldMap: FieldMap) {
+export function buildSort(
+  sort: SortInput | undefined,
+  fieldMap: FieldMap,
+): Record<string, SortOrder> | undefined {
   if (!sort) {
     return undefined;
   }
@@ -53,21 +50,21 @@ export function buildSort(sort: SortInput | undefined, fieldMap: FieldMap) {
 }
 
 export function applyQuery<T>(
-  model: any,
-  baseFilter: Record<string, any>,
-  fieldMap: FieldMap,
+  model: Model<T>,
+  baseFilter: QueryFilter<T>,
+  fieldMap: FieldMap<T>,
   filter?: FilterInput,
   sort?: SortInput,
   pagination?: CursorPaginationInput,
   search?: SearchInput,
   options?: {
-    defaultSort?: Record<string, 1 | -1>;
+    defaultSort?: Record<string, SortOrder>;
     maxLimit?: number;
     cursorField?: string;
     searchFields?: string[];
     searchMode?: SearchMode;
   },
-) {
+): Query<T[], T> {
   const filterConditions = buildFilterConditions(filter, fieldMap);
   const searchCondition = buildSearchCondition(search, fieldMap, options);
   const combinedConditions = [
@@ -75,21 +72,18 @@ export function applyQuery<T>(
     ...(searchCondition ? [searchCondition] : []),
   ];
 
-  const queryFilter =
-    combinedConditions.length > 0
-      ? { $and: [baseFilter, ...combinedConditions] }
-      : baseFilter;
+  const queryFilter = (combinedConditions.length > 0
+    ? { $and: [baseFilter, ...combinedConditions] }
+    : baseFilter) as QueryFilter<T>;
 
   const cursorField = options?.cursorField || 'createdAt';
-  const cursorFieldDef = fieldMap[cursorField];
+  const cursorFieldDef = (fieldMap as FieldMapLookup)[cursorField];
   if (!cursorFieldDef) {
-    throw new BadRequestException(
-      `Unsupported cursor field: ${cursorField}`,
-    );
+    throw new BadRequestException(`Unsupported cursor field: ${cursorField}`);
   }
   const cursorPath = cursorFieldDef.path || cursorField;
 
-  const sortClause =
+  const sortClause: Record<string, SortOrder> =
     buildSort(sort, fieldMap) || options?.defaultSort || { [cursorPath]: -1 };
   const cursorSortDirection = sortClause[cursorPath] as 1 | -1 | undefined;
   if (!cursorSortDirection) {
@@ -101,19 +95,19 @@ export function applyQuery<T>(
   const limit = Math.min(pagination?.limit ?? 100, options?.maxLimit ?? 200);
   const direction = pagination?.direction || 'next';
 
-  let finalFilter = queryFilter;
+  let finalFilter = queryFilter as QueryFilter<T>;
   if (pagination?.cursor) {
     const cursorValue = parseValue(pagination.cursor, cursorFieldDef.type);
     const operator = getCursorOperator(cursorSortDirection, direction);
     const cursorCondition = { [cursorPath]: { [operator]: cursorValue } };
-    finalFilter = { $and: [queryFilter, cursorCondition] };
+    finalFilter = { $and: [queryFilter, cursorCondition] } as QueryFilter<T>;
   }
 
   return model.find(finalFilter).sort(sortClause).limit(limit);
 }
 
 function buildCondition(item: FieldFilterInput, fieldMap: FieldMap) {
-  const field = fieldMap[item.field];
+  const field = (fieldMap as FieldMapLookup)[item.field];
   if (!field) {
     throw new BadRequestException(`Unsupported filter field: ${item.field}`);
   }
@@ -209,7 +203,10 @@ function buildBetweenCondition(
   throw new BadRequestException('Between filter requires two values');
 }
 
-function buildRegex(value: string | undefined, mode: 'contains' | 'startsWith' | 'endsWith') {
+function buildRegex(
+  value: string | undefined,
+  mode: 'contains' | 'startsWith' | 'endsWith',
+) {
   if (!value) {
     throw new BadRequestException('Filter value is required');
   }
@@ -242,7 +239,7 @@ function buildSearchCondition(
   const mode = options?.searchMode || 'contains';
   const regex = buildRegex(search.query, mode);
   const conditions = searchFields.map((fieldName) => {
-    const field = fieldMap[fieldName];
+    const field = (fieldMap as FieldMapLookup)[fieldName];
     if (!field) {
       throw new BadRequestException(`Unsupported search field: ${fieldName}`);
     }
@@ -258,7 +255,10 @@ function buildSearchCondition(
   return { $or: conditions };
 }
 
-function getCursorOperator(sortDirection: 1 | -1, pageDirection: 'next' | 'prev') {
+function getCursorOperator(
+  sortDirection: 1 | -1,
+  pageDirection: 'next' | 'prev',
+) {
   if (pageDirection === 'prev') {
     return sortDirection === 1 ? '$lt' : '$gt';
   }
