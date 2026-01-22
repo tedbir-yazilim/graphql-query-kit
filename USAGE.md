@@ -101,6 +101,24 @@ const { items, pageInfo } = await applyQueryWithPageInfo(
 );
 ```
 
+You can reuse the shared `PageInfo` output type:
+
+```ts
+import { Field, ObjectType } from '@nestjs/graphql';
+import { PageInfo } from '@tedbir/graphql-query-kit';
+
+@ObjectType()
+export class AccountConnection {
+  @Field(() => [Account])
+  items: Account[];
+
+  @Field(() => PageInfo)
+  pageInfo: PageInfo;
+}
+```
+
+`PageInfo` fields include `hasNextPage`, `hasPreviousPage`, `nextCursor`, and `prevCursor`.
+
 ## 5) Resolver example (NestJS)
 
 ```ts

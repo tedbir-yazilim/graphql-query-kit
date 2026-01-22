@@ -10,17 +10,12 @@ import {
 import { FilterLogic } from '@/enums/filter-logic.enum';
 import { FilterOperator } from '@/enums/filter-operator.enum';
 import { SortDirection } from '@/enums/sort-direction.enum';
+import type { PageInfo } from '@/types/page-info.type';
 
 type FieldType = 'string' | 'number' | 'boolean' | 'objectId' | 'date';
 type FieldSpec = { path?: string; type: FieldType };
 type FieldMapLookup = Record<string, FieldSpec>;
 export type SearchMode = 'contains' | 'startsWith' | 'endsWith';
-export type PageInfo = {
-  hasNextPage: boolean;
-  hasPrevPage: boolean;
-  nextCursor?: string;
-  prevCursor?: string;
-};
 
 export type FieldMap<T = any> = Partial<Record<keyof T & string, FieldSpec>>;
 
@@ -323,7 +318,7 @@ export async function applyQueryWithPageInfo<T>(
 
   const pageInfo: PageInfo = {
     hasNextPage: direction === 'next' ? hasMore : Boolean(pagination?.cursor),
-    hasPrevPage: direction === 'prev' ? hasMore : Boolean(pagination?.cursor),
+    hasPreviousPage: direction === 'prev' ? hasMore : Boolean(pagination?.cursor),
     nextCursor: items.length ? String(getValueByPath(items[items.length - 1], cursorPath)) : undefined,
     prevCursor: items.length ? String(getValueByPath(items[0], cursorPath)) : undefined,
   };

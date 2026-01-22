@@ -50,11 +50,15 @@ import {
   SortInput,
   applyQuery,
   applyQueryWithPageInfo,
+  PageInfo,
   FilterOperator,
   FilterLogic,
   SortDirection,
 } from '@tedbir/graphql-query-kit';
 ```
+
+`applyQueryWithPageInfo` returns `{ items, pageInfo }` where `pageInfo` includes
+`hasNextPage`, `hasPreviousPage`, `nextCursor`, and `prevCursor`.
 
 Full guide: [USAGE.md](./USAGE.md)
 
