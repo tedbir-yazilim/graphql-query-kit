@@ -32,7 +32,7 @@ return applyQuery(model, {}, fieldMap, filter, sort, pagination, search, {
 });
 ```
 
-Full guide: `USAGE.md`
+Full guide: [USAGE.md](./USAGE.md)
 
 ## Build (package)
 
@@ -56,7 +56,7 @@ import {
 } from '@tedbir/graphql-query-kit';
 ```
 
-Full guide: `USAGE.md`
+Full guide: [USAGE.md](./USAGE.md)
 
 ## Notes
 
