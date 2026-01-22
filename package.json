@@ -1,0 +1,25 @@
+{
+  "name": "@tedbir/graphql-query-kit",
+  "version": "0.2.0",
+  "description": "Reusable GraphQL filtering, sorting, and pagination helpers for NestJS + MongoDB.",
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json"
+  },
+  "devDependencies": {
+    "tsc-alias": "^1.8.8",
+    "typescript": "^5.6.3"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/graphql": "^13.0.0",
+    "class-validator": "^0.14.0",
+    "mongoose": "^8.0.0 || ^9.0.0"
+  }
+}
