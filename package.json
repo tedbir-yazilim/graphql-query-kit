@@ -1,6 +1,6 @@
 {
   "name": "@tedbir/graphql-query-kit",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "description": "Reusable GraphQL filtering, sorting, and pagination helpers for NestJS + MongoDB.",
   "license": "UNLICENSED",
   "repository": {
