@@ -25,6 +25,7 @@
   "devDependencies": {
     "@nestjs/common": "^11.1.12",
     "@nestjs/graphql": "^13.2.3",
+    "@types/node": "^22.10.2",
     "class-validator": "^0.14.3",
     "mongoose": "^9.1.4",
     "tsc-alias": "^1.8.8",
