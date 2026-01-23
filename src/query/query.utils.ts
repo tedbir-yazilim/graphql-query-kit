@@ -78,30 +78,51 @@ export function applyQuery<T>(
     ? { $and: [baseFilter, ...combinedConditions] }
     : baseFilter) as QueryFilter<T>;
 
-  const cursorField = options?.cursorField || 'createdAt';
-  const cursorFieldDef = (fieldMap as FieldMapLookup)[cursorField];
-  if (!cursorFieldDef) {
-    throw new BadRequestException(`Unsupported cursor field: ${cursorField}`);
-  }
-  const cursorPath = cursorFieldDef.path || cursorField;
-
-  const sortClause: Record<string, SortOrder> =
-    buildSort(sort, fieldMap) || options?.defaultSort || { [cursorPath]: -1 };
-  const cursorSortDirection = sortClause[cursorPath] as 1 | -1 | undefined;
-  if (!cursorSortDirection) {
-    throw new BadRequestException(
-      `Cursor pagination requires sorting by ${cursorPath}`,
-    );
-  }
+  const {
+    sortClause,
+    primaryPath,
+    primaryFieldDef,
+    primaryDirection,
+    cursorPath,
+    cursorFieldDef,
+    cursorDirection,
+    useCompositeCursor,
+  } = resolveSortInfo(sort, fieldMap, options);
 
   const limit = Math.min(pagination?.limit ?? 100, options?.maxLimit ?? 200);
   const direction = pagination?.direction || 'next';
 
   let finalFilter = queryFilter as QueryFilter<T>;
   if (pagination?.cursor) {
-    const cursorValue = parseValue(pagination.cursor, cursorFieldDef.type);
-    const operator = getCursorOperator(cursorSortDirection, direction);
-    const cursorCondition = { [cursorPath]: { [operator]: cursorValue } };
+    const decoded = decodeCursor(pagination.cursor);
+    if (useCompositeCursor && (!decoded.sort || !decoded.cursor)) {
+      throw new BadRequestException(
+        `Cursor pagination requires a composite cursor when sorting by ${primaryPath}`,
+      );
+    }
+    const sortValueRaw = useCompositeCursor ? decoded.sort : decoded.cursor;
+    const cursorValueRaw = decoded.cursor;
+    if (!sortValueRaw || !cursorValueRaw) {
+      throw new BadRequestException('Invalid cursor value');
+    }
+
+    const sortValue = parseValue(sortValueRaw, primaryFieldDef.type);
+    const cursorValue = parseValue(cursorValueRaw, cursorFieldDef.type);
+    const operator = getCursorOperator(primaryDirection, direction);
+    const tieOperator = getCursorOperator(cursorDirection, direction);
+
+    const cursorCondition = useCompositeCursor
+      ? {
+          $or: [
+            { [primaryPath]: { [operator]: sortValue } },
+            {
+              [primaryPath]: sortValue,
+              [cursorPath]: { [tieOperator]: cursorValue },
+            },
+          ],
+        }
+      : { [cursorPath]: { [tieOperator]: cursorValue } };
+
     finalFilter = { $and: [queryFilter, cursorCondition] } as QueryFilter<T>;
   }
 
@@ -294,12 +315,11 @@ export async function applyQueryWithPageInfo<T>(
     limit: limit + 1,
   };
 
-  const cursorField = options?.cursorField || 'createdAt';
-  const cursorFieldDef = (fieldMap as FieldMapLookup)[cursorField];
-  if (!cursorFieldDef) {
-    throw new BadRequestException(`Unsupported cursor field: ${cursorField}`);
-  }
-  const cursorPath = cursorFieldDef.path || cursorField;
+  const { primaryPath, cursorPath, useCompositeCursor } = resolveSortInfo(
+    sort,
+    fieldMap,
+    options,
+  );
 
   const results = await applyQuery(
     model,
@@ -316,11 +336,26 @@ export async function applyQueryWithPageInfo<T>(
   const items = hasMore ? results.slice(0, limit) : results;
   const direction = pagination?.direction || 'next';
 
+  const firstItem = items[0];
+  const lastItem = items[items.length - 1];
+
   const pageInfo: PageInfo = {
     hasNextPage: direction === 'next' ? hasMore : Boolean(pagination?.cursor),
     hasPreviousPage: direction === 'prev' ? hasMore : Boolean(pagination?.cursor),
-    nextCursor: items.length ? String(getValueByPath(items[items.length - 1], cursorPath)) : undefined,
-    prevCursor: items.length ? String(getValueByPath(items[0], cursorPath)) : undefined,
+    nextCursor: items.length
+      ? buildCursor(
+          useCompositeCursor,
+          getValueByPath(lastItem, primaryPath),
+          getValueByPath(lastItem, cursorPath),
+        )
+      : undefined,
+    prevCursor: items.length
+      ? buildCursor(
+          useCompositeCursor,
+          getValueByPath(firstItem, primaryPath),
+          getValueByPath(firstItem, cursorPath),
+        )
+      : undefined,
   };
 
   return { items, pageInfo };
@@ -328,4 +363,96 @@ export async function applyQueryWithPageInfo<T>(
 
 function getValueByPath(item: any, path: string) {
   return path.split('.').reduce((acc, key) => (acc ? acc[key] : undefined), item);
+}
+
+function buildCursor(
+  useComposite: boolean,
+  sortValue: any,
+  cursorValue: any,
+): string {
+  const cursorStr = String(cursorValue);
+  if (!useComposite) {
+    return cursorStr;
+  }
+  const payload = {
+    s: String(sortValue),
+    c: cursorStr,
+  };
+  return Buffer.from(JSON.stringify(payload)).toString('base64');
+}
+
+function decodeCursor(cursor: string): { sort?: string; cursor?: string } {
+  try {
+    const decoded = Buffer.from(cursor, 'base64').toString('utf8');
+    const parsed = JSON.parse(decoded);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof parsed.s === 'string' &&
+      typeof parsed.c === 'string'
+    ) {
+      return { sort: parsed.s, cursor: parsed.c };
+    }
+  } catch {
+    // fall through to legacy format
+  }
+  return { cursor };
+}
+
+function resolveSortInfo(
+  sort: SortInput | undefined,
+  fieldMap: FieldMap,
+  options?: {
+    defaultSort?: Record<string, SortOrder>;
+    cursorField?: string;
+  },
+) {
+  const cursorField = options?.cursorField || 'createdAt';
+  const cursorFieldDef = (fieldMap as FieldMapLookup)[cursorField];
+  if (!cursorFieldDef) {
+    throw new BadRequestException(`Unsupported cursor field: ${cursorField}`);
+  }
+  const cursorPath = cursorFieldDef.path || cursorField;
+
+  const sortClause: Record<string, SortOrder> =
+    buildSort(sort, fieldMap) || options?.defaultSort || { [cursorPath]: -1 };
+
+  const primaryPath = sort
+    ? ((fieldMap as FieldMapLookup)[sort.field]?.path || sort.field)
+    : Object.keys(sortClause)[0];
+
+  const primaryFieldDef =
+    (fieldMap as FieldMapLookup)[primaryPath] ||
+    findFieldSpecByPath(fieldMap, primaryPath);
+  if (!primaryFieldDef) {
+    throw new BadRequestException(`Unsupported sort field: ${primaryPath}`);
+  }
+
+  const primaryDirection = (sortClause[primaryPath] as 1 | -1 | undefined) ?? -1;
+
+  if (!sortClause[cursorPath]) {
+    sortClause[cursorPath] = primaryDirection;
+  }
+  const cursorDirection = sortClause[cursorPath] as 1 | -1;
+
+  return {
+    sortClause,
+    primaryPath,
+    primaryFieldDef,
+    primaryDirection,
+    cursorPath,
+    cursorFieldDef,
+    cursorDirection,
+    useCompositeCursor: primaryPath !== cursorPath,
+  };
+}
+
+function findFieldSpecByPath(fieldMap: FieldMap, path: string) {
+  const entries = Object.entries(fieldMap as FieldMapLookup);
+  for (const [key, spec] of entries) {
+    if ((spec.path || key) === path) {
+      return spec;
+    }
+  }
+  return undefined;
 }

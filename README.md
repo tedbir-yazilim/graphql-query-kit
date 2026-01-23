@@ -66,3 +66,6 @@ Full guide: [USAGE.md](./USAGE.md)
 
 - The package keeps `@/` aliases in source and rewrites them to relative paths on build via `tsc-alias`.
 - Enums register themselves with GraphQL on import.
+- Cursor pagination supports any sort field. If the sort field differs from
+  `cursorField`, the cursor becomes a composite (sort value + cursorField value)
+  and is returned via `pageInfo.nextCursor` / `pageInfo.prevCursor`.

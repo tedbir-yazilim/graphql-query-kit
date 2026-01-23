@@ -104,6 +104,31 @@ const { items, pageInfo } = await applyQueryWithPageInfo(
 You can reuse the shared `PageInfo` output type:
 
 ```ts
+// Example: sort by "name" while keeping a stable cursor with "createdAt"
+const { items, pageInfo } = await applyQueryWithPageInfo(
+  this.accountModel,
+  { isDeleted: false },
+  accountFieldMap,
+  filter,
+  { field: 'name', direction: 'asc' },
+  pagination,
+  search,
+  {
+    cursorField: 'createdAt',
+    defaultSort: { createdAt: -1 },
+    maxLimit: 200,
+    searchFields: ['name', 'email'],
+    searchMode: 'contains',
+  },
+);
+
+// pageInfo.nextCursor / prevCursor will be a composite cursor string
+// when sorting by a field other than cursorField.
+```
+
+You can reuse the shared `PageInfo` output type:
+
+```ts
 import { Field, ObjectType } from '@nestjs/graphql';
 import { PageInfo } from '@tedbir/graphql-query-kit';
 
@@ -209,7 +234,9 @@ Example variables:
 
 - String operators use case-insensitive regex.
 - `between` supports `values: ["min", "max"]` or `value: "min,max"`.
-- Cursor pagination requires the sort field to match `cursorField`.
+- Cursor pagination supports any sort field. If the sort field differs from
+  `cursorField`, the cursor becomes a composite (sort value + cursorField value)
+  and is returned via `pageInfo.nextCursor` / `pageInfo.prevCursor`.
 - If `pagination.limit` is missing, it defaults to 100 and is capped by `maxLimit`.
 - `search.fields` overrides the server-side `searchFields` whitelist.
 
@@ -333,6 +360,57 @@ Next page variables (use the last record's cursor field value):
   }
 }
 ```
+
+### Sorting by another field (cursor-based)
+
+When sorting by a field other than `cursorField` (default `createdAt`), the
+cursor returned in `pageInfo` is a composite value. You should send it back as-is.
+
+First request variables:
+
+```json
+{
+  "sort": { "field": "name", "direction": "asc" },
+  "pagination": { "limit": 20, "direction": "next" }
+}
+```
+
+Next page variables (use `pageInfo.nextCursor` from the previous response):
+
+```json
+{
+  "sort": { "field": "name", "direction": "asc" },
+  "pagination": {
+    "limit": 20,
+    "direction": "next",
+    "cursor": "BASE64_COMPOSITE_CURSOR"
+  }
+}
+```
+
+Example response (partial):
+
+```json
+{
+  "data": {
+    "accounts": {
+      "items": [
+        { "id": "1", "name": "Ada", "createdAt": "2025-01-02T10:00:00.000Z" }
+      ],
+      "pageInfo": {
+        "hasNextPage": true,
+        "hasPreviousPage": false,
+        "nextCursor": "BASE64_COMPOSITE_CURSOR",
+        "prevCursor": "BASE64_COMPOSITE_CURSOR"
+      }
+    }
+  }
+}
+```
+
+Frontend note:
+Use the cursor values from `pageInfo` as opaque strings. Do not parse or
+mutate them; just pass them back on the next/prev request.
 
 ### Previous page (cursor-based)
 
